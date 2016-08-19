@@ -2,9 +2,9 @@
 
 ## Features
 
-- [ ] AMF serialization decoder/encoder
-- [ ] FLV media container format reader/writer
-- [ ] RTMP client/server
+- [ ] AMF0/AMF3 Encoder/Decoder
+- [ ] FLV Reader/Writer
+- [ ] RTMP Client/Server
 
 ## Usage
 
