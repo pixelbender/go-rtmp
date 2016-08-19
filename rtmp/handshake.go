@@ -10,12 +10,6 @@ import (
 
 var ErrHandshake = errors.New("rtmp: handshake error")
 
-var salt = []byte{0xf0, 0xee, 0xc2, 0x4a, 0x80, 0x68, 0xbe, 0xe8, 0x2e, 0x00, 0xd0, 0xd1, 0x02, 0x9e, 0x7e, 0x57, 0x6e, 0xec, 0x5d, 0x2d, 0x29, 0x80, 0x6f, 0xab, 0x93, 0xb8, 0xe6, 0x36, 0xcf, 0xeb, 0x31, 0xae}
-var gafp = []byte("Genuine Adobe Flash Player 001")
-var gafms = []byte("Genuine Adobe Flash Media Server 001")
-var gafps = append(gafp, salt...)
-var gafmss = append(gafms, salt...)
-
 type handshakeHello struct {
 	Proto   uint8
 	Time    uint32
@@ -26,16 +20,16 @@ type handshakeHello struct {
 
 func (h *handshakeHello) pack(b []byte, key []byte) []byte {
 	b[0] = h.Proto
-	putUint32(b[1:], h.Time)
-	putUint32(b[5:], h.Version)
+	be.PutUint32(b[1:], h.Time)
+	be.PutUint32(b[5:], h.Version)
 	rand.Read(b[9:1537])
 	return b[:1537]
 }
 
 func (h *handshakeHello) unpack(b []byte, key []byte) {
 	h.Proto = b[0]
-	h.Time = getUint32(b[1:])
-	h.Version = getUint32(b[5:])
+	h.Time = be.Uint32(b[1:])
+	h.Version = be.Uint32(b[5:])
 	//if !h.unpackDigest(b, key, h.offset(b, 772) % 728 + 776, 768) {
 	//	h.unpackDigest(b, key, h.offset(b, 8) % 728 + 12, 1532)
 	//}
@@ -80,23 +74,23 @@ type handshakeAck struct {
 }
 
 func (a *handshakeAck) pack(b []byte) []byte {
-	putUint32(b, a.Time)
-	putUint32(b[4:], a.RecvTime)
+	be.PutUint32(b, a.Time)
+	be.PutUint32(b[4:], a.RecvTime)
 	rand.Read(b[8:1536])
 	return b[:1536]
 }
 
 func (a *handshakeAck) unpack(b []byte) {
-	a.Time = getUint32(b)
-	a.RecvTime = getUint32(b[4:])
+	a.Time = be.Uint32(b)
+	a.RecvTime = be.Uint32(b[4:])
 }
 
 func serverHandshake(c *Conn) (err error) {
 	/*b := make([]byte, 3073)
 	b[0] = 0x03
 	ct, cv := uint32(wallclock()), uint32(0x10000000)
-	putUint32(b[1:], ct)
-	putUint32(b[5:], cv)
+	be.PutUint32(b[1:], ct)
+	be.PutUint32(b[5:], cv)
 	rand.Read(b[9:1537])
 	if _, err = c.Write(b); err != nil {
 		return
@@ -110,10 +104,10 @@ func serverHandshake(c *Conn) (err error) {
 	}
 	ct, _ := getUint32(b[1:]), getUint32(b[5:])
 	st, sv := uint32(wallclock()), uint32(0x10000000)
-	putUint32(b[1:], st)
-	putUint32(b[5:], sv)
-	putUint32(b[1537:], st)
-	putUint32(b[1541:], ct)
+	be.PutUint32(b[1:], st)
+	be.PutUint32(b[5:], sv)
+	be.PutUint32(b[1537:], st)
+	be.PutUint32(b[1541:], ct)
 	rand.Read(b[1545:])
 	if _, err = c.Write(b); err != nil {
 		return

@@ -99,19 +99,3 @@ func (r *Reader) Skip() (err error) {
 	r.skip = nil
 	return
 }
-
-func getInt24(b []byte) int {
-	return int(b[2]) | int(b[1])<<8 | int(b[0])<<16
-}
-
-func getUint24(b []byte) uint32 {
-	return uint32(b[2]) | uint32(b[1])<<8 | uint32(b[0])<<16
-}
-
-func getTime(b []byte) int64 {
-	return int64(getUint24(b) | uint32(b[3])<<24)
-}
-
-func getUint32(b []byte) uint32 {
-	return uint32(b[3]) | uint32(b[2])<<8 | uint32(b[1])<<16 | uint32(b[0])<<24
-}

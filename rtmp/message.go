@@ -36,16 +36,16 @@ const (
 	limitDynamic = uint8(0x02)
 )
 
-type connectInfo struct {
-	App            string `amf:"app"`
-	FlashVer       string `amf:"flashVer"`
-	Capabilities   uint16 `amf:"capabilities"`
-	AudioCodecs    uint16 `amf:"audioCodecs"`
-	VideoCodecs    uint16 `amf:"videoCodecs"`
-	VideoFunction  uint8  `amf:"videoFunction"`
-	ObjectEncoding uint8  `amf:"objectEncoding"`
-	UsingProxy     bool   `amf:"fpad"`
-	SwfURL         string `amf:"swfUrl,omitempty"`
-	PageUrl        string `amf:"pageUrl,omitempty"`
-	TcURL          string `amf:"tcUrl,omitempty"`
+type ClientInfo struct {
+	App          string `amf:"app"`
+	FlashVer     string `amf:"flashVer"`
+	Capabilities uint16 `amf:"capabilities"`
+	AudioCodecs  uint16 `amf:"audioCodecs"`
+	VideoCodecs  uint16 `amf:"videoCodecs"`
+	//VideoFunction  uint8  `amf:"videoFunction"`
+	ObjectEncoding uint8 `amf:"objectEncoding"`
+	//UsingProxy     bool   `amf:"fpad"`
+	SwfURL  string `amf:"swfUrl,omitempty"`
+	PageUrl string `amf:"pageUrl,omitempty"`
+	TcURL   string `amf:"tcUrl,omitempty"`
 }
