@@ -16,19 +16,6 @@ const (
 
 const timeOverflow = int64(0xffffff)
 
-func getUint24(b []byte) uint32 {
-	return uint32(b[2]) | uint32(b[1])<<8 | uint32(b[0])<<16
-}
-
-func putUint24(b []byte, v uint32) {
-	b[0] = byte(v >> 16)
-	b[1] = byte(v >> 8)
-	b[2] = byte(v)
-}
-
-var be = binary.BigEndian
-var le = binary.LittleEndian
-
 type chunk struct {
 	Id     uint32
 	Time   int64
@@ -337,3 +324,16 @@ func (w *writer) Flush() (err error) {
 	}
 	return
 }
+
+func getUint24(b []byte) uint32 {
+	return uint32(b[2]) | uint32(b[1])<<8 | uint32(b[0])<<16
+}
+
+func putUint24(b []byte, v uint32) {
+	b[0] = byte(v >> 16)
+	b[1] = byte(v >> 8)
+	b[2] = byte(v)
+}
+
+var be = binary.BigEndian
+var le = binary.LittleEndian

@@ -2,9 +2,12 @@ package amf
 
 import (
 	"encoding/binary"
+	"log"
 	"math"
 	"reflect"
-	"strconv"
+	"runtime"
+	"runtime/debug"
+	"time"
 )
 
 const (
@@ -49,21 +52,31 @@ func (enc *amf0Encoder) encodeValue(v reflect.Value) error {
 		enc.EncodeFloat(v.Float())
 	case reflect.String:
 		enc.EncodeString(v.String())
-	case reflect.Slice, reflect.Array:
+	case reflect.Slice:
 		switch v.Type().Elem().Kind() {
 		case reflect.Uint8:
 			enc.EncodeBytes(v.Bytes())
 		default:
-			return enc.encodeArray(v)
+			return enc.encodeSlice(v)
 		}
 	case reflect.Struct:
-		return enc.encodeStruct(v)
+		if v.Type() == timeType {
+			enc.EncodeTime(v.Interface().(time.Time))
+		} else {
+			return enc.encodeStruct(v)
+		}
 	case reflect.Map:
 		return enc.encodeMap(v)
 	case reflect.Ptr:
 		return enc.encodeValue(v.Elem())
+	case reflect.Interface:
+		if !v.IsValid() {
+			enc.EncodeNull()
+		} else {
+			return enc.encodeValue(v.Elem())
+		}
 	default:
-		return errUnsType(v.Kind())
+		return errEncUnsType(v.Kind())
 	}
 	return nil
 }
@@ -119,26 +132,32 @@ func (enc *amf0Encoder) allocString(n int) []byte {
 	return b[3:]
 }
 
-func (enc *amf0Encoder) encodeString(v string) {
+func (enc *amf0Encoder) writeString(v string) {
 	n := len(v)
 	b := enc.Next(n + 2)
-	be.PutUint32(b, uint32(n))
+	be.PutUint16(b, uint16(n))
 	copy(b[2:], v)
 }
 
-func (enc *amf0Encoder) encodeArray(v reflect.Value) (err error) {
+func (enc *amf0Encoder) EncodeTime(t time.Time) {
+	b := enc.Next(11)
+	b[0] = amf0Date
+	putFloat64(b[1:], float64(t.UnixNano()/1e6))
+	b[9] = 0
+	b[10] = 0
+}
+
+func (enc *amf0Encoder) encodeSlice(v reflect.Value) (err error) {
 	// TODO: reference map
 	b := enc.Next(5)
-	b[0] = amf0Array
+	b[0] = amf0StrictArray
 	n := v.Len()
 	be.PutUint32(b[1:], uint32(n))
 	for i := 0; i < n; i++ {
-		enc.encodeString(strconv.Itoa(i))
 		if err = enc.encodeValue(v.Index(i)); err != nil {
 			return
 		}
 	}
-	putUint24(enc.Next(3), uint32(amf0ObjectEnd))
 	return
 }
 
@@ -152,7 +171,7 @@ func (enc *amf0Encoder) encodeStruct(v reflect.Value) (err error) {
 		if f.opt && isEmptyValue(r) {
 			continue
 		}
-		enc.encodeString(f.name)
+		enc.writeString(f.name)
 		if err = enc.encodeValue(r); err != nil {
 			return
 		}
@@ -169,7 +188,7 @@ func (enc *amf0Encoder) encodeMap(v reflect.Value) (err error) {
 		switch k.Kind() {
 		case reflect.String:
 			if s := k.String(); s != "" {
-				enc.encodeString(s)
+				enc.writeString(s)
 				if err = enc.encodeValue(v.MapIndex(k)); err != nil {
 					return
 				}
@@ -183,13 +202,13 @@ func (enc *amf0Encoder) encodeMap(v reflect.Value) (err error) {
 }
 
 type amf0Decoder struct {
-	Reader
+	reader
 	b   []byte
 	err error
 }
 
 func (dec *amf0Decoder) next(n int) bool {
-	dec.b, dec.err = dec.Next(n)
+	dec.b, dec.err = dec.Peek(n)
 	return dec.err == nil
 }
 
@@ -204,138 +223,430 @@ func (dec *amf0Decoder) Decode(v interface{}) error {
 	if r.Kind() != reflect.Ptr {
 		return errDecodeNotPtr
 	}
-	return dec.decodeValue(v)
+	return dec.decodeValue(r)
 }
 
-func (dec *amf0Decoder) decodeValue(v reflect.Value) error {
+func (dec *amf0Decoder) decodeValue(v reflect.Value) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("%v", r)
+			debug.PrintStack()
+			if _, ok := r.(runtime.Error); ok {
+				panic(r)
+			}
+			err = r.(error)
+		}
+	}()
 	switch v.Kind() {
 	case reflect.Bool:
-		r, err := dec.DecodeBool()
-		if err != nil {
-			return err
+		var r bool
+		if r, err = dec.DecodeBool(); err != nil {
+			return
 		}
 		v.SetBool(r)
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		r, err := dec.DecodeInt()
-		if err != nil {
-			return err
+		var r int64
+		if r, err = dec.DecodeInt(); err != nil {
+			return
 		}
 		v.SetInt(r)
+
 	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
-		r, err := dec.DecodeUint()
-		if err != nil {
-			return err
+		var r uint64
+		if r, err = dec.DecodeUint(); err != nil {
+			return
 		}
 		v.SetUint(r)
+
 	case reflect.Float32, reflect.Float64:
-		r, err := dec.DecodeFloat()
-		if err != nil {
-			return err
+		var r float64
+		if r, err = dec.DecodeFloat(); err != nil {
+			return
 		}
 		v.SetFloat(r)
 	case reflect.String:
-		r, err := dec.DecodeString()
-		if err != nil {
-			return err
+		var r string
+		if r, err = dec.DecodeString(); err != nil {
+			return
 		}
 		v.SetString(r)
-	case reflect.Slice, reflect.Array:
-		switch v.Type().Elem().Kind() {
+	//case reflect.Array:
+	// TODO: array support
+	case reflect.Slice:
+		k := v.Type().Elem().Kind()
+		switch k {
 		case reflect.Uint8:
-			enc.EncodeBytes(v.Bytes())
+			var b []byte
+			if b, err = dec.DecodeBytes(); err != nil {
+				return
+			}
+			v.SetBytes(b)
 		default:
-			return enc.encodeArray(v)
+			err = dec.decodeSlice(v)
 		}
 	case reflect.Struct:
-		enc.encodeStruct(v)
+		if v.Type() == timeType {
+			var r time.Time
+			if r, err = dec.DecodeTime(); err != nil {
+				return
+			}
+			v.Set(reflect.ValueOf(r))
+		} else {
+			err = dec.decodeStruct(v)
+		}
 	case reflect.Map:
-		enc.encodeMap(v)
+		k := v.Type().Key().Kind()
+		switch k {
+		case reflect.String:
+			err = dec.decodeMap(v)
+		default:
+			err = errUnsKeyType(k)
+		}
 	case reflect.Ptr:
-		return enc.EncodeValue(v.Elem())
+		e := v.Type().Elem()
+		if v.IsNil() {
+			v.Set(reflect.New(e))
+		}
+		if err = dec.decodeValue(v.Elem()); err != nil {
+			return
+		}
+	case reflect.Interface:
+		var r interface{}
+		if r, err = dec.read(); err != nil {
+			return
+		}
+		if r != nil {
+			v.Set(reflect.ValueOf(r))
+		}
 	default:
-		return errUnsType(v.Kind())
+		dec.Skip()
+		err = errDecUnsType(v.Kind())
 	}
-	return nil
+	return
 }
 
-func (dec *amf0Decoder) DecodeBool() (bool, error) {
+func (dec *amf0Decoder) DecodeBool() (v bool, err error) {
 	if dec.next(1) {
-		switch dec.b[0] {
+		m := dec.b[0]
+		switch m {
 		case amf0Boolean:
-			return dec.decodeBool()
+			v, err = dec.readBool()
 		default:
-			false, &errUnsDecodeType{dec.b[0], reflect.Bool}
+			dec.skipMarker(m)
+			err = &errDecMarkerKind{m, "bool"}
 		}
+	} else {
+		err = dec.err
 	}
-	return false, dec.err
+	return
 }
 
-func (dec *amf0Decoder) DecodeInt() (int64, error) {
+func (dec *amf0Decoder) DecodeInt() (v int64, err error) {
+	var f float64
+	if f, err = dec.DecodeFloat(); err == nil {
+		v = int64(f)
+	}
+	return
+}
+
+func (dec *amf0Decoder) DecodeUint() (v uint64, err error) {
+	var f float64
+	if f, err = dec.DecodeFloat(); err == nil {
+		v = uint64(f)
+	}
+	return
+}
+
+func (dec *amf0Decoder) DecodeFloat() (v float64, err error) {
 	if dec.next(1) {
-		switch dec.b[0] {
+		m := dec.b[0]
+		switch m {
 		case amf0Number:
-			return dec.decodeBool()
+			v, err = dec.readFloat()
 		default:
-			false, &errUnsDecodeType{dec.b[0], reflect.Bool}
+			err = &errDecMarkerKind{m, "number"}
+			dec.skipMarker(m)
 		}
+	} else {
+		err = dec.err
 	}
-	return false, dec.err
+	return
 }
 
-func (dec *amf0Decoder) DecodeFloat() (float64, error) {
+func (dec *amf0Decoder) DecodeString() (v string, err error) {
 	if dec.next(1) {
-		switch dec.b[0] {
-		case amf0Number:
-			return dec.decodeBool()
+		m := dec.b[0]
+		switch m {
+		case amf0String:
+			v, err = dec.readString(false)
+		case amf0Null, amf0Undefined:
+		case amf0StringExt, amf0Xml:
+			v, err = dec.readString(true)
 		default:
-			false, &errUnsDecodeType{dec.b[0], reflect.Bool}
+			err = &errDecMarkerKind{m, "string"}
 		}
+	} else {
+		err = dec.err
 	}
-	return false, dec.err
+	return
 }
 
-func (dec *amf0Decoder) DecodeNext() (v interface{}, err error) {
+func (dec *amf0Decoder) DecodeBytes() (v []byte, err error) {
+	if dec.next(1) {
+		m := dec.b[0]
+		switch m {
+		case amf0String:
+			v, err = dec.readBytes(false, true)
+		case amf0Null, amf0Undefined:
+		case amf0StringExt, amf0Xml:
+			v, err = dec.readBytes(true, true)
+		default:
+			err = &errDecMarkerKind{m, "string"}
+		}
+	} else {
+		err = dec.err
+	}
+	return
+}
+
+func (dec *amf0Decoder) DecodeTime() (v time.Time, err error) {
+	if dec.next(1) {
+		m := dec.b[0]
+		switch m {
+		case amf0Date:
+			v, err = dec.readTime()
+		default:
+			err = &errDecMarkerKind{m, "time"}
+		}
+	} else {
+		err = dec.err
+	}
+	return
+}
+
+func (dec *amf0Decoder) read() (interface{}, error) {
 	if !dec.next(1) {
 		return nil, dec.err
 	}
-	switch dec.b[0] {
+	m := dec.b[0]
+	switch m {
 	case amf0Number:
-		if dec.next(8) {
-			return getFloat64(dec.b), nil
-		}
+		return dec.readFloat()
 	case amf0Boolean:
-		if dec.next(1) {
-			return dec.b[0] != 0, nil
-		}
+		return dec.readBool()
 	case amf0String:
-		return dec.decodeString(false)
+		return dec.readString(false)
 	case amf0Object:
-		return dec.decodeObject()
+		return dec.readMap()
 	case amf0Null, amf0Undefined:
 		return nil, nil
 	//case amf0Reference:
 	// TODO: add support for refs
 	case amf0Array:
-		if _, err = dec.Next(4); err != nil {
-			return
-		}
-		return dec.decodeObject()
+		dec.next(4)
+		return dec.readMap()
 	case amf0StrictArray:
-		return dec.decodeArray()
-	//case amf0Date:
-	// TODO: add support for time
-	//	return dec.decodeTime()
+		return dec.readSlice()
+	case amf0Date:
+		return dec.readTime()
 	case amf0StringExt, amf0Xml:
-		return dec.decodeString(true)
+		return dec.readString(true)
 	case amf0Instance:
-		// TODO: class-name support
-		dec.decodeString(false)
-		return dec.decodeObject()
+		dec.skipString(false)
+		return dec.readMap()
 	default:
-		dec.err = errUnsMarker(dec.b[0])
+		dec.err = errUnsMarker(m)
+	}
+	return nil, dec.err
+}
+
+func (dec *amf0Decoder) readBool() (v bool, err error) {
+	if dec.next(1) {
+		v = dec.b[0] != 0
+	} else {
+		err = dec.err
+	}
+	return
+}
+
+func (dec *amf0Decoder) readFloat() (v float64, err error) {
+	if dec.next(8) {
+		v = getFloat64(dec.b)
+	} else {
+		err = dec.err
+	}
+	return
+}
+
+func (dec *amf0Decoder) readString(ext bool) (v string, err error) {
+	var b []byte
+	b, err = dec.readBytes(ext, false)
+	v = string(b)
+	return
+}
+
+func (dec *amf0Decoder) readBytes(ext bool, clone bool) (v []byte, err error) {
+	if ext {
+		if dec.next(4) {
+			if n := int(be.Uint32(dec.b)); dec.next(n) {
+				v = dec.b
+			}
+		}
+	} else {
+		if dec.next(2) {
+			if n := int(be.Uint16(dec.b)); dec.next(n) {
+				v = dec.b
+			}
+		}
 	}
 	if dec.err != nil {
-		return nil, dec.err
+		err = dec.err
+	} else if clone {
+		r := make([]byte, len(v))
+		copy(r, v)
+		v = r
+	}
+	return
+}
+
+func (dec *amf0Decoder) readTime() (v time.Time, err error) {
+	if dec.next(10) {
+		v = time.Unix(0, int64(getFloat64(dec.b))*1e6).UTC()
+	} else {
+		err = dec.err
+	}
+	return
+}
+
+func (dec *amf0Decoder) decodeStruct(v reflect.Value) (err error) {
+	if dec.next(1) {
+		m := dec.b[0]
+		switch m {
+		case amf0Array:
+			dec.next(4)
+			fallthrough
+		case amf0Object:
+			err = dec.readStructData(v)
+		default:
+			err = &errDecMarkerKind{m, "struct"}
+		}
+	} else {
+		err = dec.err
+	}
+	return
+}
+
+func (dec *amf0Decoder) readStructData(v reflect.Value) (err error) {
+	m := getStructMapping(v.Type())
+	var n string
+	for {
+		if n, err = dec.readString(false); err != nil {
+			return
+		} else if n == "" {
+			break
+		}
+		if f := m.names[n]; f != nil {
+			dec.decodeValue(v.Field(f.index))
+			continue
+		}
+		if err = dec.Skip(); err != nil {
+			return
+		}
+	}
+	dec.next(1)
+	return
+}
+
+func (dec *amf0Decoder) decodeMap(v reflect.Value) (err error) {
+	if dec.next(1) {
+		m := dec.b[0]
+		switch m {
+		case amf0Array:
+			dec.next(4)
+			fallthrough
+		case amf0Object:
+			err = dec.readMapData(v)
+		default:
+			err = &errDecMarkerKind{m, "struct"}
+		}
+	} else {
+		err = dec.err
+	}
+	return
+}
+
+func (dec *amf0Decoder) readMap() (v map[string]interface{}, err error) {
+	v = make(map[string]interface{})
+	if err = dec.readMapData(reflect.ValueOf(v)); err != nil {
+		return
+	}
+	return
+}
+
+func (dec *amf0Decoder) readMapData(v reflect.Value) (err error) {
+	e := v.Type().Elem()
+	if v.IsNil() {
+		m := reflect.MakeMap(v.Type())
+		v.Set(m)
+	}
+	var n string
+	for {
+		if n, err = dec.readString(false); err != nil {
+			return
+		} else if n == "" {
+			break
+		}
+		p := reflect.New(e)
+		if err = dec.decodeValue(p); err != nil {
+			return
+		}
+		v.SetMapIndex(reflect.ValueOf(n), p.Elem())
+	}
+	dec.next(1)
+	return
+}
+
+func (dec *amf0Decoder) decodeSlice(v reflect.Value) (err error) {
+	if dec.next(1) {
+		m := dec.b[0]
+		switch m {
+		case amf0StrictArray:
+			err = dec.readSliceData(v)
+		default:
+			err = &errDecMarkerKind{m, "slice"}
+		}
+	} else {
+		err = dec.err
+	}
+	return
+}
+
+func (dec *amf0Decoder) readSlice() (v []interface{}, err error) {
+	if err = dec.readSliceData(reflect.ValueOf(v)); err != nil {
+		return
+	}
+	return
+}
+
+func (dec *amf0Decoder) readSliceData(v reflect.Value) (err error) {
+	if !dec.next(4) {
+		return dec.err
+	}
+	k := v.Type().Elem()
+	n := int(be.Uint32(dec.b))
+	if v.IsNil() {
+		cap := n
+		if cap > 1024 {
+			cap = 1024
+		}
+		v.Set(reflect.MakeSlice(v.Type(), 0, cap))
+	}
+	for i := 0; i < n; i++ {
+		p := reflect.New(k)
+		if err = dec.decodeValue(p); err != nil {
+			return
+		}
+		v.Set(reflect.Append(v, p.Elem()))
 	}
 	return
 }
@@ -412,70 +723,6 @@ func (dec *amf0Decoder) skipArray() bool {
 		return n == 0
 	}
 	return false
-}
-
-func (dec *amf0Decoder) decodeBool() (bool, error) {
-	if dec.next(1) {
-		return dec.b[0] != 0, nil
-	}
-	return false, dec.err
-}
-
-func (dec *amf0Decoder) decodeString(ext bool) (string, error) {
-	if ext {
-		if dec.next(4) {
-			if n := int(be.Uint32(dec.b)); dec.next(n) {
-				return string(dec.b), nil
-			}
-		}
-	} else {
-		if dec.next(2) {
-			if n := int(be.Uint16(dec.b)); dec.next(n) {
-				return string(dec.b), nil
-			}
-		}
-	}
-	return "", dec.err
-}
-
-func (dec *amf0Decoder) decodeObject() (map[string]interface{}, error) {
-	r := make(map[string]interface{})
-	for {
-		name, err := dec.decodeString(false)
-		if err != nil {
-			return nil, err
-		}
-		if name == "" {
-			break
-		}
-		if r[name], err = dec.DecodeNext(); err != nil {
-			return nil, err
-		}
-	}
-	if dec.next(1) {
-		return r, nil
-	}
-	return nil, dec.err
-}
-
-func (dec *amf0Decoder) decodeArray() ([]interface{}, error) {
-	if !dec.next(4) {
-		return nil, dec.err
-	}
-	n := int(be.Uint32(dec.b))
-	cap := n
-	if cap > 1024 {
-		cap = 1024
-	}
-	r := make([]interface{}, 0, cap)
-	for i := 0; i < n; i++ {
-		v, err := dec.DecodeNext()
-		if err != nil {
-			return nil, err
-		}
-		r = append(r, v)
-	}
-	return r, nil
 }
 
 func getFloat64(b []byte) float64 {

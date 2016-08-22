@@ -6,7 +6,10 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
+
+var timeType = reflect.TypeOf(time.Time{})
 
 var cache map[reflect.Type]*mapping
 var mu sync.RWMutex
@@ -63,10 +66,16 @@ func isEmptyValue(v reflect.Value) bool {
 	return false
 }
 
-type errUnsType reflect.Kind
+type errEncUnsType reflect.Kind
 
-func (err errUnsType) Error() string {
-	return "amf: unsupported type: " + reflect.Kind(err).String()
+func (err errEncUnsType) Error() string {
+	return "amf: encode " + reflect.Kind(err).String()
+}
+
+type errDecUnsType reflect.Kind
+
+func (err errDecUnsType) Error() string {
+	return "amf: decode " + reflect.Kind(err).String()
 }
 
 type errUnsKeyType reflect.Kind
@@ -87,13 +96,13 @@ func (err errUnsVersion) Error() string {
 	return "amf: unsupported version: " + strconv.Itoa(int(err))
 }
 
-type errUnsDecodeType struct {
-	m uint8
-	t reflect.Kind
+type errDecMarkerKind struct {
+	m    uint8
+	kind string
 }
 
-func (err errUnsDecodeType) Error() string {
-	return "amf: cannot decode 0x" + strconv.FormatInt(int64(err.m), 16) + " as " + err.t.String()
+func (err errDecMarkerKind) Error() string {
+	return "amf: marker 0x" + strconv.FormatInt(int64(err.m), 16) + " is not a " + err.kind
 }
 
 var errDecodeNil = errors.New("amf: Decode(nil)")

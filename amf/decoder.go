@@ -9,18 +9,20 @@ type Unmarshaler interface {
 	UnmarshalAMF(dec Decoder) error
 }
 
-type Reader interface {
-	Read(b []byte) (int, error)
-	Next(n int) ([]byte, error)
+type reader interface {
+	Peek(n int) ([]byte, error)
 }
 
 type Decoder interface {
-	Reader
+	reader
 	Decode(v interface{}) error
 	//DecodeValue(v reflect.Value) error
 	Skip() error
-	DecodeNext() (interface{}, error)
-
+	DecodeInt() (int64, error)
+	DecodeUint() (uint64, error)
+	DecodeFloat() (float64, error)
+	DecodeString() (string, error)
+	DecodeBytes() ([]byte, error)
 	//DecodeBool(v bool)
 	//DecodeInt(v int64)
 	//DecodeUint(v uint64)
@@ -30,58 +32,39 @@ type Decoder interface {
 }
 
 func NewDecoder(ver uint8, r io.Reader) Decoder {
-	return newDecoder(ver, &peeker{Reader: bufio.NewReader(r)})
+	return newDecoder(ver, &bufReader{bufio.NewReader(r), 0})
 }
 
 func NewDecoderBytes(ver uint8, b []byte) Decoder {
-	return newDecoder(ver, &reader{buf: b})
+	return newDecoder(ver, &bytesReader{b, 0})
 }
 
-func newDecoder(ver uint8, r Reader) Decoder {
+func newDecoder(ver uint8, r reader) Decoder {
 	if ver == 3 {
-		return &amf3Decoder{Reader: r}
+		return &amf3Decoder{reader: r}
 	}
-	return &amf0Decoder{Reader: r}
+	return &amf0Decoder{reader: r}
 }
 
-type peeker struct {
+type bufReader struct {
 	*bufio.Reader
 	skip int
 }
 
-func (p *peeker) Read(b []byte) (int, error) {
-	if p.skip > 0 {
-		p.Discard(p.skip)
-		p.skip = 0
+func (r *bufReader) Peek(n int) ([]byte, error) {
+	if r.skip > 0 {
+		r.Discard(r.skip)
 	}
-	return p.Reader.Read(b)
+	r.skip = n
+	return r.Reader.Peek(n)
 }
 
-func (p *peeker) Next(n int) ([]byte, error) {
-	if p.skip > 0 {
-		p.Discard(p.skip)
-	}
-	p.skip = n
-	return p.Reader.Peek(n)
-}
-
-type reader struct {
+type bytesReader struct {
 	buf []byte
 	pos int
 }
 
-func (r *reader) Read(b []byte) (n int, err error) {
-	n = copy(b, r.buf[r.pos:])
-	if n < len(b) {
-		err = io.EOF
-		r.pos = len(r.buf)
-	} else {
-		r.pos += n
-	}
-	return
-}
-
-func (r *reader) Next(n int) ([]byte, error) {
+func (r *bytesReader) Peek(n int) ([]byte, error) {
 	off := r.pos + n
 	if len(r.buf) < off {
 		return r.buf[r.pos:], io.EOF

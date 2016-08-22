@@ -1,7 +1,6 @@
 package rtmp
 
 import (
-	"bytes"
 	"fmt"
 	"github.com/pixelbender/go-rtmp/amf"
 	"log"
@@ -10,7 +9,7 @@ import (
 )
 
 type Response struct {
-	*amf.Decoder
+	amf.Decoder
 	name string
 }
 
@@ -22,12 +21,19 @@ func (req *Response) error() error {
 }
 
 type ErrorResponse struct {
-	*amf.Decoder
+	amf.Decoder
 }
 
 func (err *ErrorResponse) Error() string {
-	p, _ := err.Params()
-	return fmt.Sprintf("rtmp: error response %+v", p)
+	params := make([]interface{}, 0, 10)
+	for {
+		var v interface{}
+		if err.Decode(&v) != nil {
+			break
+		}
+		params = append(params, v)
+	}
+	return fmt.Sprintf("rtmp: error response %+v", params)
 }
 
 type requestMux struct {
@@ -42,7 +48,7 @@ func (r *requestMux) handleChunk(ch *chunk) error {
 
 	// TODO: peeker
 
-	dec := amf.NewDecoder(bytes.NewReader(d))
+	dec := amf.NewDecoderBytes(0, d)
 	name, err := dec.DecodeString()
 	if err != nil {
 		return err
@@ -61,7 +67,8 @@ func (r *requestMux) handleChunk(ch *chunk) error {
 	} else {
 		log.Printf("unhandled: %v", id)
 		for {
-			p, err := res.DecodeNext()
+			var p interface{}
+			err := res.Decode(&p)
 			if err != nil {
 				break
 			}
@@ -100,7 +107,7 @@ func (r *requestMux) deleteRequest(id int64) {
 }
 
 func (r *requestMux) write(c *Conn, str uint32, name string, args ...interface{}) error {
-	enc := &amf.Encoder{}
+	enc := amf.NewEncoder(0)
 	enc.EncodeString(name)
 	enc.EncodeInt(0)
 	enc.EncodeNull()
@@ -119,7 +126,7 @@ func (r *requestMux) request(c *Conn, str uint32, name string, args ...interface
 
 	log.Printf("%s(%v) %+v", name, str, args)
 
-	enc := &amf.Encoder{}
+	enc := amf.NewEncoder(0)
 	enc.EncodeString(name)
 	enc.EncodeInt(id)
 	for _, it := range args {

@@ -68,7 +68,7 @@ func (enc *amf3Encoder) EncodeValue(v reflect.Value) error {
 	case reflect.Ptr:
 		return enc.EncodeValue(v.Elem())
 	default:
-		return errUnsType(v.Kind())
+		return errEncUnsType(v.Kind())
 	}
 	return nil
 }
@@ -187,7 +187,7 @@ func (enc *amf3Encoder) encodeDict(v reflect.Value) (err error) {
 }
 
 type amf3Decoder struct {
-	Reader
+	reader
 }
 
 func (dec *amf3Decoder) Decode(v interface{}) error {
@@ -199,6 +199,25 @@ func (dec *amf3Decoder) Skip() error {
 }
 
 func (dec *amf3Decoder) DecodeNext() (interface{}, error) {
+	return nil, nil
+}
+
+func (dec *amf3Decoder) DecodeInt() (int64, error) {
+	return 0, nil
+}
+
+func (dec *amf3Decoder) DecodeUint() (uint64, error) {
+	return 0, nil
+}
+
+func (dec *amf3Decoder) DecodeFloat() (float64, error) {
+	return 0, nil
+}
+
+func (dec *amf3Decoder) DecodeString() (string, error) {
+	return "", nil
+}
+func (dec *amf3Decoder) DecodeBytes() ([]byte, error) {
 	return nil, nil
 }
 

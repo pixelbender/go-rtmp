@@ -1,12 +1,20 @@
 language: go
 sudo: false
 go:
+  - 1.5
   - 1.6
+  - tip
+
 before_install:
   - go get github.com/mattn/goveralls
   - go get golang.org/x/tools/cmd/cover
   - go get github.com/golang/lint/golint
+
 script:
   - go test -v ./...
-  - $HOME/gopath/bin/goveralls -service=travis-ci -package ./
+  - go test -v -coverprofile=amf.coverprofile ./amf
+  - go test -v -coverprofile=flv.coverprofile ./flv
+  - go test -v -coverprofile=rtmp.coverprofile ./rtmp
+  - 'echo "mode: set" > .coverage && grep -h -v "mode: set" *.coverprofile >> .coverage'
+  - $HOME/gopath/bin/goveralls -coverprofile=.coverage -service=travis-ci
   - $HOME/gopath/bin/golint ./...

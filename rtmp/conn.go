@@ -12,7 +12,7 @@ var ErrTimeout = errors.New("rtmp: i/o timeout")
 
 var bufferSize = 4096
 
-// A Conn represents the STUN connection and implements the RTMP protocol over net.Conn interface.
+// A Conn represents the RTMP connection and implements the RTMP protocol over net.Conn interface.
 type Conn struct {
 	net.Conn
 	r *reader
@@ -21,7 +21,7 @@ type Conn struct {
 	RequestTimeout time.Duration
 	req            requestMux
 
-	str   map[int64]chan *Stream
+	str   map[int64]*Stream
 	strmu sync.RWMutex
 }
 
@@ -32,12 +32,13 @@ func NewConn(inner net.Conn) *Conn {
 		r:              newReader(inner),
 		w:              newWriter(inner),
 		RequestTimeout: 5 * time.Second,
+		str:            make(map[int64]*Stream),
 	}
 	return c
 }
 
 func (c *Conn) Serve() error {
-	var str *Stream
+	//	var str *Stream
 	for {
 		ch, err := c.r.ReadChunk()
 		if err != nil {
