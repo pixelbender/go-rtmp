@@ -8,8 +8,8 @@ import (
 
 // TODO: dial with dialer
 
-func Dial(rtmpUrl string) (*Conn, error) {
-	u, err := url.Parse(rtmpUrl)
+func Dial(uri string) (*Conn, error) {
+	u, err := url.Parse(uri)
 	if err != nil {
 		return nil, err
 	}

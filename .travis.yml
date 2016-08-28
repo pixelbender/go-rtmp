@@ -1,9 +1,7 @@
 language: go
 sudo: false
 go:
-  - 1.5
   - 1.6
-  - tip
 
 before_install:
   - go get github.com/mattn/goveralls
@@ -11,7 +9,6 @@ before_install:
   - go get github.com/golang/lint/golint
 
 script:
-  - go test -v ./...
   - go test -v -coverprofile=amf.coverprofile ./amf
   - go test -v -coverprofile=flv.coverprofile ./flv
   - go test -v -coverprofile=rtmp.coverprofile ./rtmp

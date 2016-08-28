@@ -1,20 +1,38 @@
-# Golang implementation of RTMP Protocol
+# Golang: RTMP Protocol
 
 ## Features
 
-- [ ] AMF0/AMF3 Encoder/Decoder
+- [x] AMF0 Encoder/Decoder
+- [ ] AMF3 Encoder/Decoder
 - [ ] FLV Reader/Writer
-- [ ] RTMP Client/Server
+- [x] RTMP Client
+- [ ] RTMP Server
 
-## Usage
+## Installation
 
 ```sh
 go get github.com/pixelbender/go-rtmp
 ```
 
-### RTMP Client
+## RTMP Client
 
 ```go
+package main
+
+import (
+    "github.com/pixelbender/go-rtmp/rtmp"
+    "fmt"
+)
+
+func main() {
+    conn, err := rtmp.Dial("rtmp://example.org/app")
+    if err != nil {
+        fmt.Println(err)
+    } else {
+        defer conn.Close()
+        fmt.Println(conn)
+    }
+}
 ```
 
 ## Specifications

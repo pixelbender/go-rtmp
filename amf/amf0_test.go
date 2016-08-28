@@ -54,7 +54,7 @@ func TestEncodeDecodeStruct(t *testing.T) {
 	b := enc.Bytes()
 
 	out := &testStruct{}
-	dec := NewDecoderBytes(0, b)
+	dec := NewDecoder(0, b)
 	err = dec.Decode(out)
 	if err != nil {
 		t.Fatal("decode:", err)
@@ -72,7 +72,7 @@ func TestPlainTypes(t *testing.T) {
 		if err != nil {
 			t.Fatal("hex:", h)
 		}
-		dec := NewDecoderBytes(0, b)
+		dec := NewDecoder(0, b)
 		var r interface{}
 		err = dec.Decode(&r)
 		if err != nil {

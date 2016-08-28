@@ -1,64 +1,59 @@
 package amf
 
+import (
+	"time"
+)
+
 // Marshaler is the interface implemented by objects that can marshal themselves into valid AMF.
 type Marshaler interface {
-	MarshalAMF(enc Encoder) error
-}
-
-type Writer interface {
-	Write(b []byte) (int, error)
-	Next(n int) []byte
+	MarshalAMF(w *Writer) error
 }
 
 type Encoder interface {
-	Writer
 	Encode(v interface{}) error
-	EncodeNull()
-	EncodeBool(v bool)
-	EncodeInt(v int64)
-	EncodeUint(v uint64)
-	EncodeFloat(v float64)
-	EncodeString(v string)
-	EncodeBytes(v []byte)
+	WriteNull()
+	WriteBool(v bool)
+	WriteInt(v int64)
+	WriteUint(v uint64)
+	WriteFloat(v float64)
+	WriteString(v string)
+	WriteBytes(v []byte)
+	WriteTime(v time.Time)
+	Reset()
+	Next(n int) []byte
 	Bytes() []byte
 }
 
 func NewEncoder(ver uint8) Encoder {
-	if ver == 3 {
-		return &amf3Encoder{}
-	}
-	return &amf0Encoder{}
+	w := &Writer{}
+	//if ver == 3 {
+	//	return &amf3Encoder{writer:w}
+	//}
+	return &amf0Encoder{Writer: w}
 }
 
-type writer struct {
+type Writer struct {
 	buf []byte
 	pos int
 }
 
-func (w *writer) Write(b []byte) (int, error) {
-	return copy(w.Next(len(b)), b), nil
+func (w *Writer) Reset() {
+	w.pos = 0
 }
 
-func (w *writer) Next(n int) (b []byte) {
+func (w *Writer) Next(n int) (b []byte) {
 	p := w.pos + n
 	if len(w.buf) < p {
-		w.grow(n << 1)
+		b := make([]byte, (1+((p-1)>>10))<<10)
+		if w.pos > 0 {
+			copy(b, w.buf[:w.pos])
+		}
+		w.buf = b
 	}
 	b, w.pos = w.buf[w.pos:p], p
 	return
 }
 
-func (w *writer) grow(n int) {
-	p := w.pos + n
-	if len(w.buf) < p {
-		buf := make([]byte, (1+(p>>10))<<10)
-		if w.pos > 0 {
-			copy(buf, w.buf[:w.pos])
-		}
-		w.buf = buf
-	}
-}
-
-func (w *writer) Bytes() []byte {
+func (w *Writer) Bytes() []byte {
 	return w.buf[:w.pos]
 }

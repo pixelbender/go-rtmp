@@ -1,75 +1,45 @@
 package amf
 
 import (
-	"bufio"
 	"io"
+	"time"
 )
 
 type Unmarshaler interface {
-	UnmarshalAMF(dec Decoder) error
-}
-
-type reader interface {
-	Peek(n int) ([]byte, error)
+	UnmarshalAMF(r *Reader) error
 }
 
 type Decoder interface {
-	reader
 	Decode(v interface{}) error
-	//DecodeValue(v reflect.Value) error
 	Skip() error
-	DecodeInt() (int64, error)
-	DecodeUint() (uint64, error)
-	DecodeFloat() (float64, error)
-	DecodeString() (string, error)
-	DecodeBytes() ([]byte, error)
-	//DecodeBool(v bool)
-	//DecodeInt(v int64)
-	//DecodeUint(v uint64)
-	//DecodeFloat(v float64)
-	//DecodeString(v string)
-	//DecodeBytes(v []byte)
+	ReadBool() (bool, error)
+	ReadInt() (int64, error)
+	ReadUint() (uint64, error)
+	ReadFloat() (float64, error)
+	ReadString() (string, error)
+	ReadBytes() ([]byte, error)
+	ReadTime() (time.Time, error)
 }
 
-func NewDecoder(ver uint8, r io.Reader) Decoder {
-	return newDecoder(ver, &bufReader{bufio.NewReader(r), 0})
+func NewDecoder(ver uint8, v []byte) Decoder {
+	r := &Reader{buf: v}
+	//if ver == 3 {
+	//	return &amf3Decoder{Reader: r}
+	//}
+	return &amf0Decoder{Reader: r}
 }
 
-func NewDecoderBytes(ver uint8, b []byte) Decoder {
-	return newDecoder(ver, &bytesReader{b, 0})
-}
-
-func newDecoder(ver uint8, r reader) Decoder {
-	if ver == 3 {
-		return &amf3Decoder{reader: r}
-	}
-	return &amf0Decoder{reader: r}
-}
-
-type bufReader struct {
-	*bufio.Reader
-	skip int
-}
-
-func (r *bufReader) Peek(n int) ([]byte, error) {
-	if r.skip > 0 {
-		r.Discard(r.skip)
-	}
-	r.skip = n
-	return r.Reader.Peek(n)
-}
-
-type bytesReader struct {
+type Reader struct {
 	buf []byte
 	pos int
 }
 
-func (r *bytesReader) Peek(n int) ([]byte, error) {
-	off := r.pos + n
-	if len(r.buf) < off {
-		return r.buf[r.pos:], io.EOF
+func (r *Reader) Next(n int) ([]byte, error) {
+	p := r.pos + n
+	if len(r.buf) < r.pos+n {
+		return nil, io.EOF
 	}
-	b := r.buf[r.pos:off]
-	r.pos = off
-	return b, nil
+	off := r.pos
+	r.pos = p
+	return r.buf[off : off+n], nil
 }
